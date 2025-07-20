@@ -187,8 +187,10 @@ async function main() {
   console.log('✅ System templates created')
 
   // Create a sample quote for the test user
-  const sampleQuote = await prisma.quote.create({
-    data: {
+  const sampleQuote = await prisma.quote.upsert({
+    where: { quoteNumber: 'QUO-001' },
+    update: {},
+    create: {
       quoteNumber: 'QUO-001',
       userId: testUser.id,
       jobTitle: 'Backyard Concrete Slab',
