@@ -1,5 +1,5 @@
 
-import { PrismaClient, TradeType } from '../app/node_modules/.prisma/client'
+import { PrismaClient, TradeType } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()

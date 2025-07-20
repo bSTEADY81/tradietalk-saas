@@ -1,5 +1,5 @@
 
-import { SubscriptionTier, QuoteStatus, TradeType } from '../app/node_modules/.prisma/client'
+import { SubscriptionTier, QuoteStatus, TradeType } from '@prisma/client'
 
 export interface User {
   id: string
