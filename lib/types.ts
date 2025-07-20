@@ -1,4 +1,4 @@
-// TypeScript type definitions for TradieTalk SaaS
+
 import { SubscriptionTier, QuoteStatus, TradeType } from '@prisma/client'
 
 export interface User {

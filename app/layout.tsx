@@ -1,15 +1,16 @@
+
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-import { Providers } from '@/components/providers'
 import { ThemeProvider } from '@/components/theme-provider'
-import { Toaster } from '@/components/ui/toaster'
+import { Toaster } from '@/components/ui/toast'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'TradieTalk - Professional Trade Quote Management',
-  description: 'Streamline your trade business with professional quote management, customer tracking, and business insights.',
+  title: 'TradieTalk - AI-Powered Quoting for Australian Tradies',
+  description: 'Create professional quotes in minutes with voice-powered AI. Built specifically for Australian tradies.',
+  keywords: 'tradie, quotes, quoting, australian, voice, AI, construction, building',
 }
 
 export default function RootLayout({
@@ -22,14 +23,12 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
-          <Providers>
-            {children}
-            <Toaster />
-          </Providers>
+          {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>
