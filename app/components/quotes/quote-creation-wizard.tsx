@@ -1,7 +1,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,12 @@ export function QuoteCreationWizard({ session, method = 'voice' }: QuoteCreation
   const [currentStep, setCurrentStep] = useState(1)
   const [isRecording, setIsRecording] = useState(false)
   const [selectedMethod, setSelectedMethod] = useState(method)
+  const [transcript, setTranscript] = useState('')
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
+  const [permissionGranted, setPermissionGranted] = useState(false)
+  const [recordingError, setRecordingError] = useState('')
+  const recognitionRef = useRef<any>(null)
 
   const methods = [
     {
@@ -72,13 +78,143 @@ export function QuoteCreationWizard({ session, method = 'voice' }: QuoteCreation
     { id: 4, title: 'Review', description: 'Final review' }
   ]
 
-  const handleStartRecording = () => {
+  // Initialize Speech Recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      
+      if (SpeechRecognition) {
+        setSpeechSupported(true)
+        const recognition = new SpeechRecognition()
+        
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = 'en-AU' // Australian English for tradies
+        recognition.maxAlternatives = 1
+        
+        recognition.onstart = () => {
+          console.log('Speech recognition started')
+          setRecordingError('')
+        }
+        
+        recognition.onresult = (event: any) => {
+          let finalTranscript = ''
+          let interimTranscript = ''
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' '
+            } else {
+              interimTranscript += transcript
+            }
+          }
+          
+          setTranscript(finalTranscript + interimTranscript)
+        }
+        
+        recognition.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error)
+          setRecordingError(`Speech recognition error: ${event.error}`)
+          setIsRecording(false)
+          setIsProcessing(false)
+        }
+        
+        recognition.onend = () => {
+          console.log('Speech recognition ended')
+          setIsRecording(false)
+          if (transcript.trim()) {
+            setIsProcessing(true)
+            processVoiceInput(transcript)
+          }
+        }
+        
+        recognitionRef.current = recognition
+      } else {
+        setSpeechSupported(false)
+        console.warn('Speech recognition not supported in this browser')
+      }
+    }
+  }, [])
+
+  // Check microphone permissions
+  const checkMicrophonePermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(track => track.stop()) // Stop the stream immediately
+      setPermissionGranted(true)
+      return true
+    } catch (error) {
+      console.error('Microphone permission denied:', error)
+      setRecordingError('Microphone access is required for voice recording')
+      setPermissionGranted(false)
+      return false
+    }
+  }
+
+  // Process voice input using LLM API
+  const processVoiceInput = async (voiceText: string) => {
+    try {
+      const response = await fetch('/api/voice/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          voiceText,
+          tradeType: 'GENERAL' // Can be determined from context later
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to process voice input')
+      }
+
+      const data = await response.json()
+      console.log('Processed voice data:', data)
+      
+      // Move to next step with processed data
+      setIsProcessing(false)
+      setCurrentStep(3) // Skip to calculations step with extracted data
+      
+    } catch (error) {
+      console.error('Error processing voice input:', error)
+      setRecordingError('Failed to process voice input. Please try again.')
+      setIsProcessing(false)
+    }
+  }
+
+  const handleStartRecording = async () => {
+    if (!speechSupported) {
+      setRecordingError('Speech recognition is not supported in this browser')
+      return
+    }
+
+    const hasPermission = await checkMicrophonePermission()
+    if (!hasPermission) {
+      return
+    }
+
     setIsRecording(true)
-    // Here would be the actual voice recording logic
-    setTimeout(() => {
-      setIsRecording(false)
-      setCurrentStep(2)
-    }, 3000) // Mock recording for 3 seconds
+    setTranscript('')
+    setRecordingError('')
+    
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start()
+      } catch (error) {
+        console.error('Failed to start speech recognition:', error)
+        setRecordingError('Failed to start voice recording')
+        setIsRecording(false)
+      }
+    }
+  }
+
+  const handleStopRecording = () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop()
+    }
+    setIsRecording(false)
   }
 
   const renderStepContent = () => {
@@ -153,15 +289,36 @@ export function QuoteCreationWizard({ session, method = 'voice' }: QuoteCreation
                     )}
                   </div>
 
-                  {isRecording ? (
+                  {isProcessing ? (
+                    <div>
+                      <h3 className="text-xl font-semibold text-blue-900 mb-2">Processing...</h3>
+                      <p className="text-blue-700 mb-4">Analyzing your voice input using AI</p>
+                      <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+                      {transcript && (
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border">
+                          <p className="text-sm text-blue-800 font-medium mb-1">What you said:</p>
+                          <p className="text-blue-700 italic">"{transcript}"</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : isRecording ? (
                     <div>
                       <h3 className="text-xl font-semibold text-blue-900 mb-2">Recording...</h3>
-                      <p className="text-blue-700 mb-4">Listening to your voice input</p>
-                      <div className="flex justify-center">
+                      <p className="text-blue-700 mb-4">Speak clearly about your job requirements</p>
+                      
+                      {/* Real-time transcript display */}
+                      {transcript && (
+                        <div className="mb-4 p-3 bg-blue-50 rounded-lg border">
+                          <p className="text-sm text-blue-800 font-medium mb-1">Live transcript:</p>
+                          <p className="text-blue-700">{transcript}</p>
+                        </div>
+                      )}
+                      
+                      <div className="flex justify-center space-x-3">
                         <Button 
-                          onClick={() => setIsRecording(false)}
+                          onClick={handleStopRecording}
                           variant="outline"
-                          className="border-blue-300"
+                          className="border-red-300 text-red-600 hover:bg-red-50"
                         >
                           <Square className="h-4 w-4 mr-2" />
                           Stop Recording
@@ -174,17 +331,51 @@ export function QuoteCreationWizard({ session, method = 'voice' }: QuoteCreation
                       <p className="text-blue-700 mb-6">
                         Tell me about the job: location, type of work, measurements, and any special requirements.
                       </p>
+                      
+                      {/* Error messages */}
+                      {recordingError && (
+                        <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                          <p className="text-red-700 text-sm">{recordingError}</p>
+                        </div>
+                      )}
+                      
+                      {/* Browser compatibility warning */}
+                      {!speechSupported && (
+                        <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                          <p className="text-amber-700 text-sm">
+                            Voice recording is not supported in this browser. Please use Chrome, Edge, or Safari for voice features.
+                          </p>
+                        </div>
+                      )}
+                      
                       <div className="space-y-3">
                         <Button 
                           onClick={handleStartRecording}
                           className="bg-blue-600 hover:bg-blue-700"
+                          disabled={!speechSupported}
                         >
                           <Mic className="h-4 w-4 mr-2" />
-                          Start Recording
+                          {speechSupported ? 'Start Recording' : 'Recording Unavailable'}
                         </Button>
-                        <div className="text-sm text-blue-600">
-                          Example: "I need a quote for a 6 by 4 meter concrete slab for Sarah Johnson's backyard in Melbourne"
-                        </div>
+                        
+                        {speechSupported && (
+                          <div className="text-sm text-blue-600">
+                            Example: "I need a quote for a 6 by 4 meter concrete slab for Sarah Johnson's backyard in Melbourne"
+                          </div>
+                        )}
+                        
+                        {!speechSupported && (
+                          <div className="space-y-2">
+                            <Button 
+                              onClick={() => setSelectedMethod('manual')}
+                              variant="outline"
+                              className="w-full"
+                            >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Use Manual Entry Instead
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
